@@ -1,0 +1,23 @@
+{
+  "name": "减脂营养计划",
+  "short_name": "减脂计划",
+  "description": "科学减脂 · 精准记录 · 健康每一餐",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#16a34a",
+  "theme_color": "#16a34a",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
