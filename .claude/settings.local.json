@@ -6,7 +6,12 @@
       "Bash(python -c \"import json; json.load\\(open\\('e:/product_vscode_vide_code/recodes/manifest.json', encoding='utf-8'\\)\\); print\\('manifest.json OK'\\)\")",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'feat: 减脂营养计划 v1.0 *)"
+      "Bash(git commit -m 'feat: 减脂营养计划 v1.0 *)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
     ]
   }
 }
