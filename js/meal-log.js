@@ -1,5 +1,5 @@
 /**
- * 每日饮食记录管理
+ * 每日饮食记录管理 — API 优先 + LocalStorage 降级
  */
 
 const MealLog = (() => {
@@ -20,20 +20,6 @@ const MealLog = (() => {
   };
 
   /**
-   * 获取指定日期的空日志模板
-   */
-  function emptyLog() {
-    return {
-      meals: {
-        breakfast: [],
-        lunch: [],
-        dinner: [],
-        snack: [],
-      },
-    };
-  }
-
-  /**
    * 获取今天的日期字符串 YYYY-MM-DD
    */
   function today() {
@@ -41,11 +27,10 @@ const MealLog = (() => {
   }
 
   /**
-   * 加载指定日期的饮食记录
+   * 加载指定日期的饮食记录（异步，API 优先）
    */
-  function load(date) {
-    const log = Storage.loadDailyLog(date);
-    // 确保结构完整
+  async function load(date) {
+    const log = await Storage.loadDailyLog(date);
     if (!log.meals) log.meals = { breakfast: [], lunch: [], dinner: [], snack: [] };
     for (const meal of MEAL_TYPES) {
       if (!log.meals[meal]) log.meals[meal] = [];
@@ -54,53 +39,59 @@ const MealLog = (() => {
   }
 
   /**
-   * 保存指定日期的饮食记录
+   * 保存指定日期的饮食记录（仅用于 LocalStorage 降级路径）
    */
-  function save(date, log) {
-    Storage.saveDailyLog(date, log);
+  async function save(date, log) {
+    await Storage.saveDailyLog(date, log);
   }
 
   /**
    * 添加食物到指定餐次
-   * @param {string} date - YYYY-MM-DD
-   * @param {string} mealType - breakfast/lunch/dinner/snack
-   * @param {object} food - 食物对象
-   * @param {number} grams - 食用克数
    */
-  function addFood(date, mealType, food, grams) {
-    const log = load(date);
+  async function addFood(date, mealType, food, grams) {
     const nutrition = Calculator.calcFoodNutrition(food, grams);
-    const entry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      foodName: food.name,
-      foodCategory: food.category,
-      grams,
-      nutrition,
-      addedAt: new Date().toISOString(),
-    };
-    log.meals[mealType].push(entry);
-    save(date, log);
-    return entry;
+
+    // 1. 尝试通过 API 添加
+    try {
+      const result = await ApiClient.addMeal(date, mealType, food.name, food.category, grams, nutrition);
+      return result.entry;
+    } catch (e) {
+      // 2. API 不可用 → LocalStorage 降级
+      const log = await load(date);
+      const entry = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        foodName: food.name,
+        foodCategory: food.category,
+        grams,
+        nutrition,
+        addedAt: new Date().toISOString(),
+      };
+      log.meals[mealType].push(entry);
+      await save(date, log);
+      return entry;
+    }
   }
 
   /**
    * 删除指定餐次中的某条记录
-   * @param {string} date
-   * @param {string} mealType
-   * @param {string} entryId
    */
-  function removeFood(date, mealType, entryId) {
-    const log = load(date);
-    log.meals[mealType] = log.meals[mealType].filter(e => e.id !== entryId);
-    save(date, log);
+  async function removeFood(date, mealType, entryId) {
+    // 1. 尝试通过 API 删除
+    try {
+      await ApiClient.deleteMeal(date, mealType, entryId);
+      return;
+    } catch (e) {
+      // 2. API 不可用 → LocalStorage 降级
+      const log = await load(date);
+      log.meals[mealType] = log.meals[mealType].filter(e => e.id !== entryId);
+      await save(date, log);
+    }
   }
 
   /**
-   * 计算指定日期已摄入的总营养
-   * @returns {{ calories: number, protein: number, carbs: number, fat: number }}
+   * 计算指定日期已摄入的总营养（同步，操作内存数据）
    */
-  function calcConsumed(date) {
-    const log = load(date);
+  function calcConsumedFromLog(log) {
     const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
     for (const meal of MEAL_TYPES) {
       for (const entry of log.meals[meal]) {
@@ -110,7 +101,6 @@ const MealLog = (() => {
         totals.fat += entry.nutrition.fat;
       }
     }
-    // 四舍五入
     totals.calories = Math.round(totals.calories);
     totals.protein = +totals.protein.toFixed(1);
     totals.carbs = +totals.carbs.toFixed(1);
@@ -119,10 +109,17 @@ const MealLog = (() => {
   }
 
   /**
+   * 计算指定日期已摄入的总营养（异步，从存储加载）
+   */
+  async function calcConsumed(date) {
+    const log = await load(date);
+    return calcConsumedFromLog(log);
+  }
+
+  /**
    * 计算指定餐次的营养合计
    */
-  function calcMealTotal(date, mealType) {
-    const log = load(date);
+  function calcMealTotalFromLog(log, mealType) {
     const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
     for (const entry of log.meals[mealType]) {
       totals.calories += entry.nutrition.calories;
@@ -137,6 +134,14 @@ const MealLog = (() => {
     return totals;
   }
 
+  /**
+   * 计算指定餐次的营养合计（异步）
+   */
+  async function calcMealTotal(date, mealType) {
+    const log = await load(date);
+    return calcMealTotalFromLog(log, mealType);
+  }
+
   return {
     MEAL_TYPES,
     MEAL_LABELS,
@@ -147,6 +152,8 @@ const MealLog = (() => {
     addFood,
     removeFood,
     calcConsumed,
+    calcConsumedFromLog,
     calcMealTotal,
+    calcMealTotalFromLog,
   };
 })();

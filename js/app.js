@@ -2,22 +2,21 @@
  * 减脂营养计划 — 应用入口
  * Tab 导航、数据联动、UI 渲染
  */
-
 (function () {
   'use strict';
 
   // ==================== State ====================
   let currentTab = 'profile';
   let currentDate = MealLog.today();
-  let selectedFood = null;       // 当前在饮食记录中选中的食物
-  let profile = null;            // 用户信息
-  let calcResult = null;         // 计算结果
+  let selectedFood = null;
+  let profile = null;
+  let calcResult = null;
+  let cachedMeals = null; // 内存缓存当前日期的饮食记录，避免重复异步加载
 
   // ==================== Init ====================
-  function init() {
-    profile = Storage.loadProfile();
+  async function init() {
+    profile = await Storage.loadProfile();
     if (profile) {
-      // 回填表单
       document.querySelector('input[name="gender"][value="' + profile.gender + '"]').checked = true;
       document.getElementById('age').value = profile.age;
       document.getElementById('height').value = profile.height;
@@ -25,22 +24,21 @@
       document.getElementById('activity').value = profile.activityLevel;
       document.getElementById('deficit').value = profile.deficit;
       document.getElementById('deficit-val').textContent = profile.deficit;
-      // 重新计算展示
       calcResult = Calculator.calcAll(profile);
       showCalcResults(calcResult);
     }
 
-    // 设置今天日期
     document.getElementById('meal-date').value = currentDate;
 
     bindEvents();
-    switchTab('profile'); // 默认 tab
+    switchTab('profile');
+
     if (profile) {
-      updateDashboard();
-      renderMealLog();
+      await renderMealLog();
+      await updateDashboard();
     }
-    renderFoodLibrary();
-    renderCustomFoodsList();
+    await renderFoodLibrary();
+    await renderCustomFoodsList();
   }
 
   // ==================== Events ====================
@@ -48,8 +46,7 @@
     // Tab 切换
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        switchTab(tab);
+        switchTab(btn.dataset.tab);
       });
     });
 
@@ -64,16 +61,18 @@
     // 日期切换
     document.getElementById('btn-prev-day').addEventListener('click', () => changeDate(-1));
     document.getElementById('btn-next-day').addEventListener('click', () => changeDate(1));
-    document.getElementById('btn-today').addEventListener('click', () => {
+    document.getElementById('btn-today').addEventListener('click', async () => {
       currentDate = MealLog.today();
       document.getElementById('meal-date').value = currentDate;
-      renderMealLog();
-      if (profile) updateDashboard();
+      cachedMeals = null;
+      await renderMealLog();
+      if (profile) await updateDashboard();
     });
-    document.getElementById('meal-date').addEventListener('change', (e) => {
+    document.getElementById('meal-date').addEventListener('change', async (e) => {
       currentDate = e.target.value;
-      renderMealLog();
-      if (profile) updateDashboard();
+      cachedMeals = null;
+      await renderMealLog();
+      if (profile) await updateDashboard();
     });
 
     // 食物搜索 (饮食记录)
@@ -97,18 +96,18 @@
   }
 
   // ==================== Tab Switching ====================
-  function switchTab(tab) {
+  async function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
 
-    if (tab === 'dashboard' && profile) updateDashboard();
-    if (tab === 'meals') renderMealLog();
-    if (tab === 'foods') renderFoodLibrary();
+    if (tab === 'dashboard' && profile) await updateDashboard();
+    if (tab === 'meals') await renderMealLog();
+    if (tab === 'foods') await renderFoodLibrary();
   }
 
   // ==================== Profile ====================
-  function handleProfileSubmit(e) {
+  async function handleProfileSubmit(e) {
     e.preventDefault();
 
     const gender = document.querySelector('input[name="gender"]:checked').value;
@@ -124,15 +123,14 @@
     }
 
     profile = { gender, age, height, weight, activityLevel, deficit };
-    Storage.saveProfile(profile);
+    await Storage.saveProfile(profile);
     calcResult = Calculator.calcAll(profile);
 
     showCalcResults(calcResult);
-    updateDashboard();
-    renderMealLog();
+    await renderMealLog();
+    await updateDashboard();
     showToast('✅ 减脂计划已生成！', 'success');
 
-    // 切换到概览页
     setTimeout(() => switchTab('dashboard'), 600);
   }
 
@@ -145,7 +143,6 @@
     document.getElementById('res-carbs').textContent = r.macros.carbs;
     document.getElementById('res-fat').textContent = r.macros.fat;
 
-    // 餐次分配
     const plan = Calculator.generateMealPlan(r.targetCalories, r.macros);
     const mealIcons = { breakfast: '🌅', lunch: '☀️', dinner: '🌙', snack: '🍪' };
     const mealNames = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
@@ -161,12 +158,11 @@
       </div>
     `).join('');
 
-    // 滚动到结果区
     document.getElementById('calc-results').scrollIntoView({ behavior: 'smooth' });
   }
 
   // ==================== Dashboard ====================
-  function updateDashboard() {
+  async function updateDashboard() {
     if (!profile || !calcResult) {
       document.getElementById('dash-no-profile').style.display = 'block';
       document.getElementById('dash-data').style.display = 'none';
@@ -176,7 +172,8 @@
     document.getElementById('dash-no-profile').style.display = 'none';
     document.getElementById('dash-data').style.display = 'block';
 
-    const consumed = MealLog.calcConsumed(currentDate);
+    const log = cachedMeals || await MealLog.load(currentDate);
+    const consumed = MealLog.calcConsumedFromLog(log);
     const remaining = Calculator.calcRemaining(calcResult.targetCalories, calcResult.macros, consumed);
 
     // Target values
@@ -202,17 +199,12 @@
     document.getElementById('dash-carbs-bar').style.width = carbsPct + '%';
     document.getElementById('dash-fat-bar').style.width = fatPct + '%';
 
-    // Change bar colors when exceeding
     ['cal', 'protein', 'carbs', 'fat'].forEach(type => {
       const bar = document.getElementById('dash-' + type + '-bar');
       const pct = { cal: calPct, protein: proteinPct, carbs: carbsPct, fat: fatPct }[type];
-      if (pct >= 100) {
-        bar.style.background = 'var(--red-500)';
-      }
+      if (pct >= 100) bar.style.background = 'var(--red-500)';
     });
 
-    // Remaining text
-    const remSign = (v) => v >= 0 ? v : 0;
     document.getElementById('dash-cal-remaining').textContent =
       remaining.calories >= 0 ? `剩余 ${remaining.calories} kcal` : '已超出目标热量';
     document.getElementById('dash-protein-remaining').textContent =
@@ -222,29 +214,23 @@
     document.getElementById('dash-fat-remaining').textContent =
       remaining.fat > 0 ? `剩余 ${remaining.fat} g` : '已达标 ✓';
 
-    // Summary
-    document.getElementById('summary-cal').textContent = remSign(remaining.calories);
-    document.getElementById('summary-protein').textContent = remSign(remaining.protein);
-    document.getElementById('summary-carbs').textContent = remSign(remaining.carbs);
-    document.getElementById('summary-fat').textContent = remSign(remaining.fat);
+    document.getElementById('summary-cal').textContent = Math.max(0, remaining.calories);
+    document.getElementById('summary-protein').textContent = Math.max(0, remaining.protein);
+    document.getElementById('summary-carbs').textContent = Math.max(0, remaining.carbs);
+    document.getElementById('summary-fat').textContent = Math.max(0, remaining.fat);
 
-    // Color the summary based on remaining
     const summaryCal = document.getElementById('summary-cal');
-    if (remaining.calories <= 0) {
-      summaryCal.style.color = 'var(--red-500)';
-    } else {
-      summaryCal.style.color = 'var(--green-700)';
-    }
+    summaryCal.style.color = remaining.calories <= 0 ? 'var(--red-500)' : 'var(--green-700)';
   }
 
   // ==================== Meal Log ====================
-  function renderMealLog() {
-    const log = MealLog.load(currentDate);
+  async function renderMealLog() {
+    cachedMeals = await MealLog.load(currentDate);
 
     const container = document.getElementById('meal-log-container');
     container.innerHTML = MealLog.MEAL_TYPES.map(mealType => {
-      const entries = log.meals[mealType] || [];
-      const mealTotal = MealLog.calcMealTotal(currentDate, mealType);
+      const entries = cachedMeals.meals[mealType] || [];
+      const mealTotal = MealLog.calcMealTotalFromLog(cachedMeals, mealType);
       const icon = MealLog.MEAL_ICONS[mealType];
       const label = MealLog.MEAL_LABELS[mealType];
 
@@ -278,12 +264,12 @@
 
     // 绑定删除按钮
     container.querySelectorAll('.entry-del').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
         const mealType = btn.dataset.meal;
-        MealLog.removeFood(currentDate, mealType, id);
-        renderMealLog();
-        if (profile) updateDashboard();
+        await MealLog.removeFood(currentDate, mealType, id);
+        await renderMealLog();
+        if (profile) await updateDashboard();
         showToast('已删除', 'success');
       });
     });
@@ -309,7 +295,6 @@
       </div>
     `).join('');
 
-    // 点击选中
     resultsDiv.querySelectorAll('.search-item').forEach(item => {
       item.addEventListener('click', () => {
         const name = item.dataset.name;
@@ -332,7 +317,7 @@
     preview.style.display = 'flex';
   }
 
-  function handleAddFood() {
+  async function handleAddFood() {
     if (!selectedFood) {
       showToast('请先搜索并选择一种食物', 'error');
       return;
@@ -345,7 +330,7 @@
     }
 
     const mealType = document.getElementById('food-meal-type').value;
-    MealLog.addFood(currentDate, mealType, selectedFood, grams);
+    await MealLog.addFood(currentDate, mealType, selectedFood, grams);
 
     // 清空
     document.getElementById('food-search').value = '';
@@ -353,19 +338,19 @@
     document.getElementById('selected-food-preview').style.display = 'none';
     selectedFood = null;
 
-    renderMealLog();
-    if (profile) updateDashboard();
+    await renderMealLog();
+    if (profile) await updateDashboard();
     showToast('✅ 已添加', 'success');
   }
 
   // ==================== Food Library ====================
-  function renderFoodLibrary() {
+  async function renderFoodLibrary() {
     const keyword = document.getElementById('food-lib-search').value;
     const category = document.getElementById('food-category-filter').value;
 
     let foods;
     if (category === 'custom') {
-      foods = Storage.loadCustomFoods();
+      foods = await Storage.loadCustomFoods();
     } else if (category === 'all') {
       foods = keyword ? FoodDB.search(keyword) : FoodDB.getAllFoods();
     } else {
@@ -390,7 +375,9 @@
           <td>${f.carbs}</td>
           <td>${f.fat}</td>
           <td>
-            ${isCustom ? `<button class="food-del-btn" data-id="${f.id}" title="删除">🗑️</button>` : '<span style="color:var(--gray-400)">内置</span>'}
+            ${isCustom
+              ? `<button class="food-del-btn" data-id="${f.id}" title="删除">🗑️</button>`
+              : '<span style="color:var(--gray-400)">内置</span>'}
           </td>
         </tr>
       `;
@@ -398,11 +385,11 @@
 
     // 删除自定义食物
     tbody.querySelectorAll('.food-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
-        Storage.removeCustomFood(id);
-        renderFoodLibrary();
-        renderCustomFoodsList();
+        await Storage.removeCustomFood(id);
+        await renderFoodLibrary();
+        await renderCustomFoodsList();
         showToast('自定义食物已删除', 'success');
       });
     });
@@ -412,8 +399,8 @@
     }
   }
 
-  function renderCustomFoodsList() {
-    const customs = Storage.loadCustomFoods();
+  async function renderCustomFoodsList() {
+    const customs = await Storage.loadCustomFoods();
     const card = document.getElementById('custom-foods-card');
     const list = document.getElementById('custom-foods-list');
 
@@ -436,16 +423,16 @@
     `).join('');
 
     list.querySelectorAll('.cf-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        Storage.removeCustomFood(btn.dataset.id);
-        renderFoodLibrary();
-        renderCustomFoodsList();
+      btn.addEventListener('click', async () => {
+        await Storage.removeCustomFood(btn.dataset.id);
+        await renderFoodLibrary();
+        await renderCustomFoodsList();
         showToast('自定义食物已删除', 'success');
       });
     });
   }
 
-  function handleCustomFoodSubmit(e) {
+  async function handleCustomFoodSubmit(e) {
     e.preventDefault();
 
     const name = document.getElementById('cf-name').value.trim();
@@ -461,32 +448,31 @@
       return;
     }
 
-    // 检查重复名称
     const existing = FoodDB.getAllFoods().find(f => f.name === name);
     if (existing) {
       showToast('食物名称已存在，请换一个名称', 'error');
       return;
     }
 
-    Storage.addCustomFood({ name, category, calories, protein, carbs, fat });
+    await Storage.addCustomFood({ name, category, calories, protein, carbs, fat });
 
-    // 清空表单
     document.getElementById('custom-food-form').reset();
     document.getElementById('cf-category').value = 'meat';
 
-    renderFoodLibrary();
-    renderCustomFoodsList();
-    showToast('✅ 自定义食物已保存！可在饮食记录中使用', 'success');
+    await renderFoodLibrary();
+    await renderCustomFoodsList();
+    showToast('✅ 自定义食物已保存！', 'success');
   }
 
   // ==================== Date ====================
-  function changeDate(delta) {
+  async function changeDate(delta) {
     const d = new Date(currentDate + 'T00:00:00');
     d.setDate(d.getDate() + delta);
     currentDate = d.toISOString().slice(0, 10);
     document.getElementById('meal-date').value = currentDate;
-    renderMealLog();
-    if (profile) updateDashboard();
+    cachedMeals = null;
+    await renderMealLog();
+    if (profile) await updateDashboard();
   }
 
   // ==================== Toast ====================

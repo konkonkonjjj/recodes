@@ -1,0 +1,15 @@
+{
+  "name": "bmr-app-server",
+  "version": "1.0.0",
+  "description": "减脂营养计划 — 后端 API 服务",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "setup-db": "mysql -u root -p < setup.sql"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "mysql2": "^3.11.0"
+  }
+}
