@@ -275,9 +275,9 @@
     });
   }
 
-  function handleFoodSearch() {
+  async function handleFoodSearch() {
     const keyword = document.getElementById('food-search').value;
-    const results = FoodDB.search(keyword);
+    const results = await FoodDB.search(keyword);
     const resultsDiv = document.getElementById('food-search-results');
 
     if (results.length === 0 || keyword.length === 0) {
@@ -298,7 +298,7 @@
     resultsDiv.querySelectorAll('.search-item').forEach(item => {
       item.addEventListener('click', () => {
         const name = item.dataset.name;
-        const foods = FoodDB.getAllFoods();
+        const foods = await FoodDB.getAllFoods();
         selectedFood = foods.find(f => f.name === name);
         if (selectedFood) {
           document.getElementById('food-search').value = selectedFood.name;
@@ -352,9 +352,9 @@
     if (category === 'custom') {
       foods = await Storage.loadCustomFoods();
     } else if (category === 'all') {
-      foods = keyword ? FoodDB.search(keyword) : FoodDB.getAllFoods();
+      foods = keyword ? (await FoodDB.search(keyword)) : (await FoodDB.getAllFoods());
     } else {
-      foods = FoodDB.getByCategory(category);
+      foods = await FoodDB.getByCategory(category);
       if (keyword) {
         foods = foods.filter(f => f.name.toLowerCase().includes(keyword.toLowerCase()));
       }
@@ -448,7 +448,7 @@
       return;
     }
 
-    const existing = FoodDB.getAllFoods().find(f => f.name === name);
+    const existing = (await FoodDB.getAllFoods()).find(f => f.name === name);
     if (existing) {
       showToast('食物名称已存在，请换一个名称', 'error');
       return;

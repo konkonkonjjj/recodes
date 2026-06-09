@@ -109,25 +109,27 @@ const FoodDB = (() => {
   /**
    * 获取全部食物（内置 + 自定义）
    */
-  function getAllFoods() {
-    const customs = Storage.loadCustomFoods();
+  async function getAllFoods() {
+    const customs = await Storage.loadCustomFoods();
     return [...BUILTIN_FOODS, ...customs];
   }
 
   /**
    * 按分类筛选
    */
-  function getByCategory(cat) {
-    return getAllFoods().filter(f => f.category === cat);
+  async function getByCategory(cat) {
+    const foods = await getAllFoods();
+    return foods.filter(f => f.category === cat);
   }
 
   /**
    * 按关键词搜索
    */
-  function search(keyword) {
+  async function search(keyword) {
     if (!keyword || !keyword.trim()) return getAllFoods();
     const kw = keyword.trim().toLowerCase();
-    return getAllFoods().filter(f => f.name.toLowerCase().includes(kw));
+    const foods = await getAllFoods();
+    return foods.filter(f => f.name.toLowerCase().includes(kw));
   }
 
   /**

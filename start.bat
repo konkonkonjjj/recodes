@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 title 减脂营养计划 - 完整服务
 
 echo.
