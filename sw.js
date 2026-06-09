@@ -3,11 +3,12 @@
  * 缓存所有静态资源，实现离线可用
  */
 
-const CACHE_NAME = 'bmr-app-v1';
+const CACHE_NAME = 'bmr-app-v2';
 const ASSETS = [
   '/',
   '/index.html',
   '/css/style.css',
+  '/js/api-client.js',
   '/js/storage.js',
   '/js/calculator.js',
   '/js/food-db.js',
