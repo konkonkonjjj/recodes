@@ -27,7 +27,8 @@
       "Bash(node --check js/app.js)",
       "Bash(curl -s \"http://127.0.0.1:8080/\")",
       "Bash(node -e \"const c = require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const m = c.match\\(/BUILTIN_FOODS\\\\s*=\\\\s*\\\\[/\\); console.log\\('foods count:', c.split\\('{ name:'\\).length - 1\\);\")",
-      "Bash(node --check js/api-client.js)"
+      "Bash(node --check js/api-client.js)",
+      "Bash(node -e \"const fs=require\\('fs'\\); const c=fs.readFileSync\\('js/food-db.js','utf8'\\); const m=c.match\\(/BUILTIN_FOODS\\\\s*=\\\\s*\\\\[\\([\\\\s\\\\S]*?\\)\\\\];/\\); const foods=m[1].match\\(/\\\\{ name:/g\\); console.log\\('食物总数:', foods ? foods.length : 0\\);\")"
     ]
   }
 }
