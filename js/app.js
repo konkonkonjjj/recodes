@@ -296,7 +296,7 @@
     `).join('');
 
     resultsDiv.querySelectorAll('.search-item').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', async () => {
         const name = item.dataset.name;
         const foods = await FoodDB.getAllFoods();
         selectedFood = foods.find(f => f.name === name);
